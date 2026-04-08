@@ -1,34 +1,80 @@
-import { useState } from 'react'
-import { Check, Zap, Crown, Star } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Check, Zap, Crown, Star, ExternalLink } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useAuthStore from '../store/useAuthStore'
 import Button from '../components/ui/Button'
 import Card, { CardHeader } from '../components/ui/Card'
 import Badge from '../components/ui/Badge'
 import ProgressBar from '../components/ui/ProgressBar'
+import { CardSkeleton } from '../components/ui/Skeleton'
+import { createCheckoutSession, getTransactions } from '../services/billingService'
 import { PLANS } from '../constants'
+import { formatDate } from '../utils'
 
 const PLAN_ICONS = { free: Zap, pro: Crown, premium: Star }
 const PLAN_COLORS = { free: 'text-gray-600', pro: 'text-indigo-600', premium: 'text-purple-600' }
-const INVOICE_DATA = [
-  { id: 'INV-001', date: 'Dec 1, 2024', amount: '$29.00', status: 'Paid' },
-  { id: 'INV-002', date: 'Nov 1, 2024', amount: '$29.00', status: 'Paid' },
-  { id: 'INV-003', date: 'Oct 1, 2024', amount: '$29.00', status: 'Paid' },
-]
 
 export default function Billing() {
-  const { user, updateUser } = useAuthStore()
+  const { user, refreshUser } = useAuthStore()
   const [upgrading, setUpgrading] = useState(null)
+  const [transactions, setTransactions] = useState([])
+  const [txLoading, setTxLoading] = useState(true)
+
+  useEffect(() => {
+    const load = async () => {
+      setTxLoading(true)
+      try {
+        const { data } = await getTransactions()
+        setTransactions(data.transactions || [])
+      } catch {
+        // silently fail
+      } finally {
+        setTxLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  // Check for successful Stripe return
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('success') === 'true') {
+      toast.success('Payment successful! Your plan has been upgraded.')
+      refreshUser()
+      window.history.replaceState({}, '', '/billing')
+    }
+    if (params.get('cancelled') === 'true') {
+      toast.error('Payment cancelled.')
+      window.history.replaceState({}, '', '/billing')
+    }
+  }, [])
 
   const handleUpgrade = async (planId) => {
     if (planId === user?.plan) return
     setUpgrading(planId)
-    await new Promise((r) => setTimeout(r, 1500))
-    const plan = PLANS.find((p) => p.id === planId)
-    updateUser({ plan: planId, credits: plan.credits, totalCredits: plan.credits })
+    try {
+      const { data } = await createCheckoutSession(planId)
+
+      // Dev mock mode — backend upgraded without Stripe
+      if (data.mock) {
+        toast.success(data.message || 'Plan upgraded!')
+        await refreshUser()
+        setUpgrading(null)
+        return
+      }
+
+      // Real Stripe — redirect to checkout
+      if (data.url) {
+        window.location.href = data.url
+        return
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to start checkout')
+    }
     setUpgrading(null)
-    toast.success(`Upgraded to ${plan.name} plan!`)
   }
+
+  const currentPlanData = PLANS.find((p) => p.id === user?.plan)
 
   return (
     <div className="space-y-6">
@@ -48,7 +94,9 @@ export default function Billing() {
               <Badge variant={user?.plan === 'pro' ? 'primary' : user?.plan === 'premium' ? 'purple' : 'default'}>
                 {user?.plan?.toUpperCase()} PLAN
               </Badge>
-              <span className="text-sm text-gray-500 dark:text-gray-400">Renews Jan 1, 2025</span>
+              {user?.subscriptionStatus === 'active' && (
+                <Badge variant="success">Active</Badge>
+              )}
             </div>
             <div>
               <div className="mb-1.5 flex justify-between text-sm">
@@ -67,7 +115,7 @@ export default function Billing() {
           </div>
           <div className="shrink-0">
             <p className="text-3xl font-bold text-gray-900 dark:text-white">
-              ${PLANS.find((p) => p.id === user?.plan)?.price ?? 0}
+              ${currentPlanData?.price ?? 0}
               <span className="text-base font-normal text-gray-500">/mo</span>
             </p>
           </div>
@@ -99,25 +147,19 @@ export default function Billing() {
                     </span>
                   </div>
                 )}
-
                 <div className="mb-5">
                   <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl ${isPopular ? 'bg-white/20' : 'bg-indigo-50 dark:bg-indigo-900/30'}`}>
                     <Icon className={`h-6 w-6 ${isPopular ? 'text-white' : PLAN_COLORS[plan.id]}`} />
                   </div>
-                  <h3 className={`text-xl font-bold ${isPopular ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
-                    {plan.name}
-                  </h3>
+                  <h3 className={`text-xl font-bold ${isPopular ? 'text-white' : 'text-gray-900 dark:text-white'}`}>{plan.name}</h3>
                   <div className="mt-2 flex items-baseline gap-1">
-                    <span className={`text-4xl font-extrabold ${isPopular ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
-                      ${plan.price}
-                    </span>
+                    <span className={`text-4xl font-extrabold ${isPopular ? 'text-white' : 'text-gray-900 dark:text-white'}`}>${plan.price}</span>
                     <span className={isPopular ? 'text-indigo-200' : 'text-gray-500 dark:text-gray-400'}>/month</span>
                   </div>
                   <p className={`mt-1 text-sm ${isPopular ? 'text-indigo-200' : 'text-gray-500 dark:text-gray-400'}`}>
                     {plan.credits} credits / month
                   </p>
                 </div>
-
                 <ul className="mb-6 space-y-2.5">
                   {plan.features.map((feat) => (
                     <li key={feat} className="flex items-start gap-2.5 text-sm">
@@ -126,15 +168,15 @@ export default function Billing() {
                     </li>
                   ))}
                 </ul>
-
                 <Button
                   variant={isPopular ? 'secondary' : isCurrent ? 'ghost' : 'primary'}
                   className={`w-full ${isPopular && !isCurrent ? 'bg-white text-indigo-700 hover:bg-indigo-50' : ''}`}
                   loading={upgrading === plan.id}
-                  disabled={isCurrent}
+                  disabled={isCurrent || (plan.price === 0 && user?.plan !== 'free')}
                   onClick={() => handleUpgrade(plan.id)}
+                  icon={!isCurrent && plan.price > 0 ? ExternalLink : undefined}
                 >
-                  {isCurrent ? 'Current Plan' : plan.price === 0 ? 'Downgrade' : 'Upgrade'}
+                  {isCurrent ? 'Current Plan' : plan.price === 0 ? 'Free Plan' : 'Upgrade'}
                 </Button>
               </div>
             )
@@ -142,29 +184,39 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* Invoice history */}
+      {/* Transaction history */}
       <Card>
-        <CardHeader title="Invoice History" subtitle="Download past invoices" />
-        <div className="divide-y divide-gray-100 dark:divide-gray-700">
-          {INVOICE_DATA.map((inv) => (
-            <div key={inv.id} className="flex items-center justify-between py-3.5">
-              <div>
-                <p className="text-sm font-medium text-gray-900 dark:text-white">{inv.id}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{inv.date}</p>
+        <CardHeader title="Transaction History" subtitle="Your billing history" />
+        {txLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => <CardSkeleton key={i} />)}
+          </div>
+        ) : transactions.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+            No transactions yet.
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-100 dark:divide-gray-700">
+            {transactions.map((tx) => (
+              <div key={tx._id} className="flex items-center justify-between py-3.5">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white capitalize">
+                    {tx.plan} Plan
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(tx.createdAt)}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    ${tx.amount}
+                  </span>
+                  <Badge variant={tx.status === 'completed' ? 'success' : tx.status === 'pending' ? 'warning' : 'danger'}>
+                    {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
+                  </Badge>
+                </div>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm font-semibold text-gray-900 dark:text-white">{inv.amount}</span>
-                <Badge variant="success">{inv.status}</Badge>
-                <button
-                  onClick={() => toast.success('Invoice downloaded!')}
-                  className="text-sm text-indigo-600 hover:underline dark:text-indigo-400"
-                >
-                  Download
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   )

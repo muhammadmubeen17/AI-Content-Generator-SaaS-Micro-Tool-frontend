@@ -1,65 +1,107 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-
-const MOCK_USER = {
-  id: '1',
-  name: 'Alex Johnson',
-  email: 'alex@example.com',
-  avatar: null,
-  plan: 'pro',
-  credits: 142,
-  totalCredits: 200,
-  createdAt: '2024-01-15',
-}
+import * as authService from '../services/authService'
+import * as userService from '../services/userService'
 
 const useAuthStore = create(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
 
-      login: async (email, password) => {
-        set({ isLoading: true })
-        await new Promise((r) => setTimeout(r, 1000))
-        if (email && password) {
-          set({ user: { ...MOCK_USER, email }, isAuthenticated: true, isLoading: false })
-          return { success: true }
-        }
-        set({ isLoading: false })
-        return { success: false, error: 'Invalid credentials' }
-      },
-
+      // ─── Register ────────────────────────────────────────────────────────────
       register: async (name, email, password) => {
         set({ isLoading: true })
-        await new Promise((r) => setTimeout(r, 1200))
-        set({
-          user: { ...MOCK_USER, name, email },
-          isAuthenticated: true,
-          isLoading: false,
-        })
-        return { success: true }
+        try {
+          const { data } = await authService.register({ name, email, password })
+          localStorage.setItem('token', data.token)
+          set({ user: data.user, isAuthenticated: true, isLoading: false })
+          return { success: true }
+        } catch (err) {
+          set({ isLoading: false })
+          return { success: false, error: err.message }
+        }
       },
 
-      logout: () => {
+      // ─── Login ───────────────────────────────────────────────────────────────
+      login: async (email, password) => {
+        set({ isLoading: true })
+        try {
+          const { data } = await authService.login({ email, password })
+          localStorage.setItem('token', data.token)
+          set({ user: data.user, isAuthenticated: true, isLoading: false })
+          return { success: true }
+        } catch (err) {
+          set({ isLoading: false })
+          return { success: false, error: err.message }
+        }
+      },
+
+      // ─── Logout ──────────────────────────────────────────────────────────────
+      logout: async () => {
+        try {
+          await authService.logout()
+        } catch {
+          // Ignore — still clear local state
+        }
+        localStorage.removeItem('token')
         set({ user: null, isAuthenticated: false })
       },
 
-      updateUser: (updates) => {
-        set((state) => ({ user: { ...state.user, ...updates } }))
+      // ─── Refresh user from API ────────────────────────────────────────────────
+      refreshUser: async () => {
+        try {
+          const { data } = await authService.getMe()
+          set({ user: data.user, isAuthenticated: true })
+        } catch {
+          localStorage.removeItem('token')
+          set({ user: null, isAuthenticated: false })
+        }
       },
 
-      decrementCredits: () => {
+      // ─── Update profile (from Settings page) ─────────────────────────────────
+      updateProfile: async (updates) => {
+        try {
+          const { data } = await userService.updateProfile(updates)
+          set({ user: data.user })
+          return { success: true }
+        } catch (err) {
+          return { success: false, error: err.message }
+        }
+      },
+
+      // ─── Change password ──────────────────────────────────────────────────────
+      changePassword: async (currentPassword, newPassword) => {
+        try {
+          const { data } = await authService.changePassword({ currentPassword, newPassword })
+          // Backend issues a new token after password change
+          if (data.token) localStorage.setItem('token', data.token)
+          return { success: true }
+        } catch (err) {
+          return { success: false, error: err.message }
+        }
+      },
+
+      // ─── Sync credits after generation ───────────────────────────────────────
+      updateUser: (updates) => {
+        set((state) => ({ user: state.user ? { ...state.user, ...updates } : null }))
+      },
+
+      decrementCredits: (cost = 1) => {
         set((state) => ({
           user: state.user
-            ? { ...state.user, credits: Math.max(0, state.user.credits - 1) }
+            ? { ...state.user, credits: Math.max(0, state.user.credits - cost) }
             : null,
         }))
       },
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+      }),
     }
   )
 )

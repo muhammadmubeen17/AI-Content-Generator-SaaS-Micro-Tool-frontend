@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { User, Lock, Bell, Shield } from 'lucide-react'
+import { User, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useAuthStore from '../store/useAuthStore'
 import Card, { CardHeader } from '../components/ui/Card'
@@ -11,7 +11,8 @@ import Avatar from '../components/ui/Avatar'
 import { PLANS } from '../constants'
 
 export default function Settings() {
-  const { user, updateUser } = useAuthStore()
+  const { user, updateProfile, changePassword } = useAuthStore()
+
   const [profileForm, setProfileForm] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -35,10 +36,13 @@ export default function Settings() {
     e.preventDefault()
     if (!profileForm.name.trim()) { toast.error('Name is required'); return }
     setSavingProfile(true)
-    await new Promise((r) => setTimeout(r, 800))
-    updateUser({ name: profileForm.name, email: profileForm.email })
+    const result = await updateProfile({ name: profileForm.name, email: profileForm.email })
     setSavingProfile(false)
-    toast.success('Profile updated!')
+    if (result.success) {
+      toast.success('Profile updated!')
+    } else {
+      toast.error(result.error || 'Update failed')
+    }
   }
 
   const handleSavePassword = async (e) => {
@@ -50,10 +54,14 @@ export default function Settings() {
     if (Object.keys(errs).length) { setPasswordErrors(errs); return }
     setPasswordErrors({})
     setSavingPassword(true)
-    await new Promise((r) => setTimeout(r, 1000))
+    const result = await changePassword(passwordForm.current, passwordForm.newPass)
     setSavingPassword(false)
-    setPasswordForm({ current: '', newPass: '', confirm: '' })
-    toast.success('Password changed!')
+    if (result.success) {
+      setPasswordForm({ current: '', newPass: '', confirm: '' })
+      toast.success('Password changed!')
+    } else {
+      toast.error(result.error || 'Password change failed')
+    }
   }
 
   const currentPlan = PLANS.find((p) => p.id === user?.plan)
@@ -70,23 +78,17 @@ export default function Settings() {
 
       {/* Profile */}
       <Card>
-        <CardHeader
-          title="Profile Information"
-          subtitle="Update your personal details"
-        />
+        <CardHeader title="Profile Information" subtitle="Update your personal details" />
         <form onSubmit={handleSaveProfile} className="space-y-5">
           <div className="flex items-center gap-5">
             <Avatar name={user?.name} size="xl" />
             <div>
-              <Button variant="secondary" size="sm" onClick={() => toast('Feature coming soon!')}>
+              <Button variant="secondary" size="sm" type="button" onClick={() => toast('Feature coming soon!')}>
                 Change Avatar
               </Button>
-              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-                JPG, PNG up to 2MB
-              </p>
+              <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">JPG, PNG up to 2MB</p>
             </div>
           </div>
-
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Input
               label="Full Name"
@@ -103,21 +105,15 @@ export default function Settings() {
               placeholder="you@example.com"
             />
           </div>
-
           <div className="flex justify-end">
-            <Button type="submit" loading={savingProfile}>
-              Save Changes
-            </Button>
+            <Button type="submit" loading={savingProfile}>Save Changes</Button>
           </div>
         </form>
       </Card>
 
       {/* Change Password */}
       <Card>
-        <CardHeader
-          title="Change Password"
-          subtitle="Use a strong password with at least 8 characters"
-        />
+        <CardHeader title="Change Password" subtitle="Use a strong password with at least 8 characters" />
         <form onSubmit={handleSavePassword} className="space-y-4">
           <Input
             label="Current Password"
@@ -149,9 +145,7 @@ export default function Settings() {
             />
           </div>
           <div className="flex justify-end">
-            <Button type="submit" loading={savingPassword}>
-              Update Password
-            </Button>
+            <Button type="submit" loading={savingPassword}>Update Password</Button>
           </div>
         </form>
       </Card>
@@ -160,22 +154,13 @@ export default function Settings() {
       <Card>
         <CardHeader title="Plan & Usage" />
         <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-semibold text-gray-900 dark:text-white">
-                  {currentPlan?.name} Plan
-                </span>
-                <Badge variant={user?.plan === 'pro' ? 'primary' : user?.plan === 'premium' ? 'purple' : 'default'}>
-                  {user?.plan?.toUpperCase()}
-                </Badge>
-              </div>
-              <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                ${currentPlan?.price}/month · Renews Jan 1, 2025
-              </p>
-            </div>
+          <div className="flex items-center gap-3">
+            <span className="text-base font-semibold text-gray-900 dark:text-white">{currentPlan?.name} Plan</span>
+            <Badge variant={user?.plan === 'pro' ? 'primary' : user?.plan === 'premium' ? 'purple' : 'default'}>
+              {user?.plan?.toUpperCase()}
+            </Badge>
+            {user?.subscriptionStatus === 'active' && <Badge variant="success">Active</Badge>}
           </div>
-
           <div>
             <div className="mb-2 flex justify-between text-sm">
               <span className="text-gray-600 dark:text-gray-400">AI Credits Used</span>
@@ -190,10 +175,9 @@ export default function Settings() {
               color={user?.credits < 20 ? 'red' : user?.credits < 50 ? 'yellow' : 'indigo'}
             />
             <p className="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
-              {user?.credits} credits remaining. Resets in 18 days.
+              {user?.credits} credits remaining.
             </p>
           </div>
-
           <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-700/30">
             <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">Plan features</p>
             <ul className="space-y-1.5">
@@ -210,10 +194,7 @@ export default function Settings() {
 
       {/* Notifications */}
       <Card>
-        <CardHeader
-          title="Notification Preferences"
-          subtitle="Choose what notifications you receive"
-        />
+        <CardHeader title="Notification Preferences" subtitle="Choose what notifications you receive" />
         <div className="space-y-4">
           {[
             { key: 'emailAlerts', label: 'Email alerts', desc: 'Get notified when content is ready' },
@@ -231,15 +212,9 @@ export default function Settings() {
                   setNotifications((prev) => ({ ...prev, [key]: !prev[key] }))
                   toast.success('Preference saved')
                 }}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  notifications[key] ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'
-                }`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${notifications[key] ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-600'}`}
               >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                    notifications[key] ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${notifications[key] ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
           ))}
@@ -256,11 +231,7 @@ export default function Settings() {
               Permanently delete your account and all data. This cannot be undone.
             </p>
           </div>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => toast.error('Contact support to delete your account.')}
-          >
+          <Button variant="danger" size="sm" onClick={() => toast.error('Contact support to delete your account.')}>
             Delete
           </Button>
         </div>

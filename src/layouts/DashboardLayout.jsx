@@ -1,10 +1,16 @@
+import { useEffect } from 'react'
 import { Outlet, Navigate } from 'react-router-dom'
 import useAuthStore from '../store/useAuthStore'
 import Sidebar from '../components/Sidebar'
 import Navbar from '../components/Navbar'
 
 export default function DashboardLayout() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const { isAuthenticated, refreshUser } = useAuthStore()
+
+  // Sync user data from backend on every dashboard mount
+  useEffect(() => {
+    if (isAuthenticated) refreshUser()
+  }, [])
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
