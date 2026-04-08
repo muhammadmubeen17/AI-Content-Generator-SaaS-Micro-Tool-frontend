@@ -1,7 +1,23 @@
 import { create } from 'zustand'
 
+/* Read persisted preference (falls back to false = light) */
+const storedDark = (() => {
+  try {
+    return JSON.parse(localStorage.getItem('darkMode')) === true
+  } catch {
+    return false
+  }
+})()
+
+/* Apply the class immediately so there is no flash of wrong theme */
+if (storedDark) {
+  document.documentElement.classList.add('dark')
+} else {
+  document.documentElement.classList.remove('dark')
+}
+
 const useAppStore = create((set) => ({
-  darkMode: false,
+  darkMode: storedDark,
   sidebarCollapsed: false,
 
   toggleDarkMode: () =>
@@ -12,6 +28,7 @@ const useAppStore = create((set) => ({
       } else {
         document.documentElement.classList.remove('dark')
       }
+      localStorage.setItem('darkMode', JSON.stringify(next))
       return { darkMode: next }
     }),
 
@@ -22,3 +39,4 @@ const useAppStore = create((set) => ({
 }))
 
 export default useAppStore
+
