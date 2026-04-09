@@ -14,3 +14,9 @@ export const getCreditHistory = (params = {}) =>
 
 export const getTransactions = () =>
   api.get('/billing/transactions')
+
+export const renewPlan = () =>
+  api.post('/billing/renew')
+
+export const getPortalSession = () =>
+  api.post('/billing/portal-session')

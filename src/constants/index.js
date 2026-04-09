@@ -41,15 +41,6 @@ export const PLANS = [
     features: ['200 AI generations/month', 'All templates', 'Priority support', 'API access', 'History (90 days)'],
     highlighted: true,
   },
-  {
-    id: 'premium',
-    name: 'Premium',
-    price: 79,
-    credits: 1000,
-    maxCredits: 1000,
-    features: ['Unlimited generations', 'All templates', '24/7 dedicated support', 'API access', 'Unlimited history', 'Team seats (5)'],
-    highlighted: false,
-  },
 ]
 
 export const CREDIT_PACKS = [

@@ -19,6 +19,8 @@ import {
   downgrade as downgradePlan,
   purchaseCredits as purchaseCreditsApi,
   getCreditHistory,
+  renewPlan,
+  getPortalSession,
 } from '../services/billingService'
 import { PLANS, CREDIT_PACKS } from '../constants'
 import { formatDate } from '../utils'
@@ -51,6 +53,8 @@ export default function Billing() {
   const [upgrading, setUpgrading] = useState(null)
   const [downgrading, setDowngrading] = useState(false)
   const [purchasingPack, setPurchasingPack] = useState(null)
+  const [renewing, setRenewing] = useState(false)
+  const [portaling, setPortaling] = useState(false)
 
   const [transactions, setTransactions] = useState([])
   const [txLoading, setTxLoading] = useState(true)
@@ -183,6 +187,33 @@ export default function Billing() {
     setPurchasingPack(null)
   }
 
+  const handleRenew = async () => {
+    setRenewing(true)
+    try {
+      const { data } = await renewPlan()
+      toast.success(data.message || 'Plan renewed!')
+      await refreshUser()
+      loadCreditHistory(1)
+      loadTransactions()
+    } catch (err) {
+      toast.error(err.message || 'Failed to renew plan.')
+    }
+    setRenewing(false)
+  }
+
+  const handleOpenPortal = async () => {
+    setPortaling(true)
+    try {
+      const { data } = await getPortalSession()
+      if (data.url) {
+        window.location.href = data.url
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to open billing portal.')
+    }
+    setPortaling(false)
+  }
+
   const currentPlanData = PLANS.find((p) => p.id === user?.plan)
   const creditsUsed = (user?.totalCredits ?? 0) - (user?.credits ?? 0)
   const creditsPercent = user?.totalCredits ? Math.round((user.credits / user.totalCredits) * 100) : 0
@@ -191,6 +222,10 @@ export default function Billing() {
   const resetDate = user?.creditsResetAt
     ? new Date(user.creditsResetAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : '—'
+
+  const expiryDate = user?.planExpiresAt
+    ? new Date(user.planExpiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null
 
   return (
     <div className="space-y-6">
@@ -215,8 +250,8 @@ export default function Billing() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xl font-bold text-gray-900 dark:text-white">{currentPlanData?.name} Plan</span>
-                    <Badge variant={PLAN_BADGE[user?.plan] || 'default'}>
-                      {user?.subscriptionStatus === 'active' ? 'Active' : user?.plan === 'free' ? 'Free' : user?.subscriptionStatus?.toUpperCase()}
+                    <Badge variant={user?.subscriptionStatus === 'cancelling' ? 'orange' : PLAN_BADGE[user?.plan] || 'default'}>
+                      {user?.subscriptionStatus === 'cancelling' ? 'Cancelling' : user?.subscriptionStatus === 'active' ? 'Active' : user?.plan === 'free' ? 'Free' : user?.subscriptionStatus?.toUpperCase()}
                     </Badge>
                   </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -241,31 +276,66 @@ export default function Billing() {
                 />
               </div>
 
-              {/* Reset date */}
+               {/* Reset date / Expiry date */}
               <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
                 <div className="flex items-center gap-1.5">
                   <RefreshCw className="h-3.5 w-3.5" />
-                  <span>Credits reset: <strong className="text-gray-700 dark:text-gray-300">{resetDate}</strong></span>
+                  {user?.subscriptionStatus === 'cancelling' ? (
+                    <span className="text-orange-600 dark:text-orange-400">Plan ends on: <strong>{expiryDate}</strong></span>
+                  ) : (
+                    <span>Credits reset: <strong className="text-gray-700 dark:text-gray-300">{resetDate}</strong></span>
+                  )}
                 </div>
                 <span className="text-gray-300 dark:text-gray-600">•</span>
                 <span>{creditsPercent}% remaining</span>
               </div>
             </div>
 
-            {/* Price */}
-            <div className="shrink-0 text-right">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                ${currentPlanData?.price ?? 0}
-                <span className="text-base font-normal text-gray-500">/mo</span>
-              </p>
-              {isPaidPlan && (
-                <button
-                  onClick={() => setShowDowngradeModal(true)}
-                  className="mt-2 text-xs text-red-500 hover:text-red-600 hover:underline transition-colors"
-                >
-                  Downgrade to Free
-                </button>
-              )}
+            {/* Price & Primary Action */}
+            <div className="shrink-0 flex flex-col items-end gap-3">
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900 dark:text-white">
+                  ${currentPlanData?.price ?? 0}
+                  <span className="text-base font-normal text-gray-500">/mo</span>
+                </p>
+                {isPaidPlan && user?.subscriptionStatus !== 'cancelling' && (
+                  <button
+                    onClick={() => setShowDowngradeModal(true)}
+                    className="mt-1 text-xs text-red-500 hover:text-red-600 hover:underline transition-colors"
+                  >
+                    Downgrade to Free
+                  </button>
+                )}
+                {user?.subscriptionStatus === 'cancelling' && (
+                  <p className="mt-1 text-[10px] font-medium uppercase text-orange-600 dark:text-orange-400">
+                    Downgrade pending
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {user?.subscriptionStatus === 'cancelling' ? (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    loading={renewing}
+                    onClick={handleRenew}
+                    icon={RefreshCw}
+                  >
+                    Renew Plan
+                  </Button>
+                ) : isPaidPlan ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={portaling}
+                    onClick={handleOpenPortal}
+                    icon={Receipt}
+                  >
+                    Update Payment
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </div>
         </Card>
@@ -363,12 +433,12 @@ export default function Billing() {
       {/* ── Section 3: Plan Comparison Grid ──────────────────────────────────── */}
       <div>
         <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Choose a Plan</h2>
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:max-w-4xl">
           {PLANS.map((plan) => {
             const Icon = PLAN_ICONS[plan.id]
             const isCurrent = user?.plan === plan.id
             const isPopular = plan.highlighted
-            const userPlanRank = { free: 0, pro: 1, premium: 2 }
+            const userPlanRank = { free: 0, pro: 1 }
             const isDowngrade = userPlanRank[plan.id] < userPlanRank[user?.plan]
             const isUpgrade = userPlanRank[plan.id] > userPlanRank[user?.plan]
 
@@ -412,12 +482,25 @@ export default function Billing() {
 
                 <div className="mt-6">
                   {isCurrent ? (
-                    <button
-                      disabled
-                      className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-500 cursor-not-allowed dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-400"
-                    >
-                      ✓ Current Plan
-                    </button>
+                    user?.subscriptionStatus === 'cancelling' ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="w-full"
+                        loading={renewing}
+                        onClick={handleRenew}
+                        icon={RefreshCw}
+                      >
+                        Renew Plan
+                      </Button>
+                    ) : (
+                      <button
+                        disabled
+                        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-500 cursor-not-allowed dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-400"
+                      >
+                        ✓ Current Plan
+                      </button>
+                    )
                   ) : isUpgrade ? (
                     <Button
                       variant={isPopular ? 'secondary' : 'primary'}
@@ -429,17 +512,26 @@ export default function Billing() {
                       Upgrade
                     </Button>
                   ) : isDowngrade ? (
-                    <button
-                      onClick={() => setShowDowngradeModal(true)}
-                      className={`flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
-                        isPopular
-                          ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
-                          : 'border-orange-200 bg-orange-50 text-orange-600 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30'
-                      }`}
-                    >
-                      <ArrowDown className="h-4 w-4" />
-                      Downgrade
-                    </button>
+                    user?.subscriptionStatus === 'cancelling' ? (
+                      <button
+                        disabled
+                        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-medium text-gray-500 cursor-not-allowed dark:border-gray-600 dark:bg-gray-700/50 dark:text-gray-400"
+                      >
+                        ✓ Downgrade Pending
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowDowngradeModal(true)}
+                        className={`flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
+                          isPopular
+                            ? 'border-white/30 bg-white/10 text-white hover:bg-white/20'
+                            : 'border-orange-200 bg-orange-50 text-orange-600 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-800 dark:bg-orange-900/20 dark:text-orange-400 dark:hover:bg-orange-900/30'
+                        }`}
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                        Downgrade
+                      </button>
+                    )
                   ) : (
                     <button
                       disabled
