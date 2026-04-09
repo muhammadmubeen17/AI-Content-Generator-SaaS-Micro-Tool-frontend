@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Navigate, useNavigate } from 'react-router-dom'
 import {
   Sparkles, Copy, RotateCcw, Download, Check, Lightbulb,
@@ -6,6 +6,7 @@ import {
   Megaphone, Mail, Share2, Package, AlertTriangle, ArrowRight,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { marked } from 'marked'
 import { TOOLS } from '../../constants'
 import useContentStore from '../../store/useContentStore'
 import useAuthStore from '../../store/useAuthStore'
@@ -17,6 +18,9 @@ import Card, { CardHeader } from '../../components/ui/Card'
 import Badge from '../../components/ui/Badge'
 import { copyToClipboard } from '../../utils'
 
+// Configure marked for safe rendering
+marked.setOptions({ breaks: true, gfm: true })
+
 const ICON_MAP = {
   PlayCircle, Briefcase, ShoppingBag, Users, FileText, Megaphone, Mail, Share2, Package,
 }
@@ -26,12 +30,20 @@ export default function ToolPage() {
   const navigate = useNavigate()
 
   // ── All hooks must be called unconditionally ─────────────────────────────
-  const { generateContent, isGenerating } = useContentStore()
+  const { streamContent, isGenerating, streamedText } = useContentStore()
   const { user, updateUser } = useAuthStore()
   const [form, setForm] = useState({})
   const [errors, setErrors] = useState({})
   const [output, setOutput] = useState(null)
   const [copied, setCopied] = useState(false)
+  const outputRef = useRef(null)
+
+  // Auto-scroll output panel as text streams in
+  useEffect(() => {
+    if (outputRef.current && isGenerating) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight
+    }
+  }, [streamedText, isGenerating])
 
   // Reset form and output whenever the tool changes
   useEffect(() => {
@@ -75,7 +87,7 @@ export default function ToolPage() {
     const tone = form.tone || tool.defaultTone || 'professional'
     const length = form.length || tool.defaultLength || 'medium'
 
-    const result = await generateContent({ contentType, tone, length, prompt })
+    const result = await streamContent({ contentType, tone, length, prompt })
 
     if (result.success) {
       setOutput(result.content)
@@ -91,8 +103,9 @@ export default function ToolPage() {
   }
 
   const handleCopy = async () => {
-    if (!output) return
-    const ok = await copyToClipboard(output.content)
+    const text = output?.content || streamedText
+    if (!text) return
+    const ok = await copyToClipboard(text)
     if (ok) {
       setCopied(true)
       toast.success('Copied to clipboard!')
@@ -101,7 +114,9 @@ export default function ToolPage() {
   }
 
   const handleDownload = () => {
-    const blob = new Blob([output.content], { type: 'text/plain' })
+    const text = output?.content || streamedText
+    if (!text) return
+    const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -245,11 +260,40 @@ export default function ToolPage() {
         <Card>
           <CardHeader
             title="Generated Output"
-            subtitle={output ? `${output.wordCount} words` : 'Your content will appear here'}
-            action={output && <Badge variant="success">Ready</Badge>}
+            subtitle={
+              output
+                ? `${output.wordCount} words`
+                : isGenerating && streamedText
+                  ? `${streamedText.split(/\s+/).filter(Boolean).length} words…`
+                  : 'Your content will appear here'
+            }
+            action={output && !isGenerating && <Badge variant="success">Ready</Badge>}
           />
 
-          {isGenerating ? (
+          {/* Streaming or final output */}
+          {(isGenerating && streamedText) || output ? (
+            <div className="space-y-4">
+              <div
+                ref={outputRef}
+                className="ai-output min-h-64 max-h-[520px] overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60 scrollbar-thin"
+                dangerouslySetInnerHTML={{
+                  __html: marked.parse((output?.content ?? streamedText) + (isGenerating ? '<span class="streaming-cursor"></span>' : ''))
+                }}
+              />
+              {!isGenerating && (
+                <div className="flex gap-2.5">
+                  <Button variant="secondary" icon={copied ? Check : Copy} onClick={handleCopy} className="flex-1">
+                    {copied ? 'Copied!' : 'Copy'}
+                  </Button>
+                  <Button variant="secondary" icon={RotateCcw} onClick={handleGenerate} className="flex-1">
+                    Regenerate
+                  </Button>
+                  <Button variant="ghost" icon={Download} title="Download as .txt" onClick={handleDownload} />
+                </div>
+              )}
+            </div>
+          ) : isGenerating ? (
+            /* Spinner shown before first chunk arrives */
             <div className="flex flex-col items-center justify-center py-16">
               <div className={`mb-4 flex h-14 w-14 items-center justify-center rounded-2xl ${tool.color.bg}`}>
                 {ToolIcon
@@ -257,7 +301,7 @@ export default function ToolPage() {
                   : <Sparkles className="h-7 w-7 animate-pulse text-indigo-600 dark:text-indigo-400" />
                 }
               </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">AI is crafting your content...</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300">AI is crafting your content…</p>
               <p className="mt-1 text-xs text-gray-400">This usually takes 2–5 seconds</p>
               <div className="mt-4 flex gap-1.5">
                 {[0, 1, 2].map((i) => (
@@ -269,22 +313,8 @@ export default function ToolPage() {
                 ))}
               </div>
             </div>
-          ) : output ? (
-            <div className="space-y-4">
-              <div className="min-h-64 max-h-[520px] overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm leading-relaxed text-gray-800 whitespace-pre-wrap dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-200 scrollbar-thin">
-                {output.content}
-              </div>
-              <div className="flex gap-2.5">
-                <Button variant="secondary" icon={copied ? Check : Copy} onClick={handleCopy} className="flex-1">
-                  {copied ? 'Copied!' : 'Copy'}
-                </Button>
-                <Button variant="secondary" icon={RotateCcw} onClick={handleGenerate} loading={isGenerating} className="flex-1">
-                  Regenerate
-                </Button>
-                <Button variant="ghost" icon={Download} title="Download as .txt" onClick={handleDownload} />
-              </div>
-            </div>
           ) : (
+            /* Empty state */
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl ${tool.color.bg}`}>
                 {ToolIcon

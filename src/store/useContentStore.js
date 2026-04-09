@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import * as contentService from '../services/contentService'
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
 const useContentStore = create((set, get) => ({
   // ─── State ──────────────────────────────────────────────────────────────────
   history: [],
@@ -10,9 +12,103 @@ const useContentStore = create((set, get) => ({
 
   generatedContent: null,
   isGenerating: false,
+  streamedText: '',
 
   selectedHistoryItem: null,
   stats: null,
+
+  // ─── Stream content (SSE) ─────────────────────────────────────────────────
+  streamContent: async (params) => {
+    set({ isGenerating: true, generatedContent: null, streamedText: '' })
+    const token = localStorage.getItem('token')
+
+    let response
+    try {
+      response = await fetch(`${API_BASE}/content/generate-stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          contentType: params.contentType,
+          tone: params.tone,
+          length: params.length,
+          prompt: params.prompt,
+          templateId: params.templateId || undefined,
+        }),
+      })
+    } catch (err) {
+      set({ isGenerating: false })
+      return { success: false, error: err.message }
+    }
+
+    // Pre-stream HTTP errors (validation, auth, credits)
+    if (!response.ok) {
+      let message = 'Generation failed.'
+      try {
+        const json = await response.json()
+        message = json.message || message
+      } catch {}
+      set({ isGenerating: false })
+      return { success: false, error: message }
+    }
+
+    // Read SSE stream
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result = null
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let parsed
+          try { parsed = JSON.parse(line.slice(6)) } catch { continue }
+
+          if (parsed.chunk !== undefined) {
+            set((state) => ({ streamedText: state.streamedText + parsed.chunk }))
+          } else if (parsed.error) {
+            set({ isGenerating: false })
+            return { success: false, error: parsed.error }
+          } else if (parsed.done) {
+            result = parsed
+          }
+        }
+      }
+    } catch (err) {
+      set({ isGenerating: false })
+      return { success: false, error: err.message }
+    }
+
+    if (!result) {
+      set({ isGenerating: false })
+      return { success: false, error: 'Stream ended unexpectedly.' }
+    }
+
+    const finalText = get().streamedText
+    const item = {
+      id: result.contentId,
+      content: finalText,
+      wordCount: result.wordCount,
+    }
+
+    set((state) => ({
+      generatedContent: item,
+      history: [item, ...state.history],
+      isGenerating: false,
+    }))
+
+    return { success: true, content: item, creditsRemaining: result.creditsRemaining }
+  },
 
   // ─── Generate content ────────────────────────────────────────────────────────
   generateContent: async (params) => {
@@ -111,7 +207,7 @@ const useContentStore = create((set, get) => ({
 
   // ─── Local helpers ────────────────────────────────────────────────────────────
   setSelectedHistoryItem: (item) => set({ selectedHistoryItem: item }),
-  clearGenerated: () => set({ generatedContent: null }),
+  clearGenerated: () => set({ generatedContent: null, streamedText: '' }),
 }))
 
 export default useContentStore
