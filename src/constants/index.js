@@ -28,6 +28,7 @@ export const PLANS = [
     name: 'Free',
     price: 0,
     credits: 10,
+    maxCredits: 10,
     features: ['10 AI generations/month', '3 templates', 'Basic export', 'Email support'],
     highlighted: false,
   },
@@ -36,6 +37,7 @@ export const PLANS = [
     name: 'Pro',
     price: 29,
     credits: 200,
+    maxCredits: 200,
     features: ['200 AI generations/month', 'All templates', 'Priority support', 'API access', 'History (90 days)'],
     highlighted: true,
   },
@@ -44,8 +46,37 @@ export const PLANS = [
     name: 'Premium',
     price: 79,
     credits: 1000,
+    maxCredits: 1000,
     features: ['Unlimited generations', 'All templates', '24/7 dedicated support', 'API access', 'Unlimited history', 'Team seats (5)'],
     highlighted: false,
+  },
+]
+
+export const CREDIT_PACKS = [
+  {
+    id: 'small',
+    name: '50 Credits',
+    credits: 50,
+    price: 5,
+    pricePerCredit: '$0.10',
+    color: 'indigo',
+  },
+  {
+    id: 'medium',
+    name: '150 Credits',
+    credits: 150,
+    price: 12,
+    pricePerCredit: '$0.08',
+    color: 'purple',
+    popular: true,
+  },
+  {
+    id: 'large',
+    name: '500 Credits',
+    credits: 500,
+    price: 35,
+    pricePerCredit: '$0.07',
+    color: 'emerald',
   },
 ]
 
