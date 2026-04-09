@@ -5,7 +5,8 @@ import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import ForgotPassword from './pages/auth/ForgotPassword'
 import Dashboard from './pages/Dashboard'
-import GenerateContent from './pages/GenerateContent'
+import ToolPage from './pages/tools/ToolPage'
+import VerifyEmail from './pages/auth/VerifyEmail'
 import Templates from './pages/Templates'
 import History from './pages/History'
 import Billing from './pages/Billing'
@@ -28,12 +29,18 @@ export default function App() {
         {/* Protected */}
         <Route element={<DashboardLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/generate" element={<GenerateContent />} />
+          {/* Legacy route — redirect to blog tool */}
+          <Route path="/generate" element={<Navigate to="/tools/blog" replace />} />
+          {/* AI tool platform */}
+          <Route path="/tools/:toolId" element={<ToolPage />} />
           <Route path="/templates" element={<Templates />} />
           <Route path="/history" element={<History />} />
           <Route path="/billing" element={<Billing />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
+
+        {/* Email verification — standalone, accessible to both auth states */}
+        <Route path="/verify-email" element={<VerifyEmail />} />
 
         {/* Redirects */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

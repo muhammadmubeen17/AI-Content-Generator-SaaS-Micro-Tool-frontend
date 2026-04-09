@@ -83,6 +83,28 @@ const useAuthStore = create(
         }
       },
 
+      // ─── Verify email via token from link ────────────────────────────────────
+      verifyEmail: async (token) => {
+        try {
+          const { data } = await authService.verifyEmail(token)
+          localStorage.setItem('token', data.token)
+          set({ user: data.user, isAuthenticated: true })
+          return { success: true }
+        } catch (err) {
+          return { success: false, error: err.message }
+        }
+      },
+
+      // ─── Resend verification email ────────────────────────────────────────────
+      resendVerification: async () => {
+        try {
+          await authService.resendVerification()
+          return { success: true }
+        } catch (err) {
+          return { success: false, error: err.message }
+        }
+      },
+
       // ─── Sync credits after generation ───────────────────────────────────────
       updateUser: (updates) => {
         set((state) => ({ user: state.user ? { ...state.user, ...updates } : null }))

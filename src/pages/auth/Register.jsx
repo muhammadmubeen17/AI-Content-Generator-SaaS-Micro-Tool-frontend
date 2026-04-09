@@ -31,8 +31,8 @@ export default function Register() {
 
     const result = await register(form.name, form.email, form.password)
     if (result.success) {
-      toast.success('Account created! Welcome to ContentAI.')
-      navigate('/dashboard')
+      toast.success('Account created! Check your email to verify your account.')
+      navigate('/verify-email')
     }
   }
 

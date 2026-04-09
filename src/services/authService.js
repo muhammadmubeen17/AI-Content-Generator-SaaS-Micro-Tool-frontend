@@ -14,3 +14,9 @@ export const getMe = () =>
 
 export const changePassword = (data) =>
   api.patch('/auth/change-password', data)
+
+export const verifyEmail = (token) =>
+  api.get(`/auth/verify-email/${token}`)
+
+export const resendVerification = () =>
+  api.post('/auth/resend-verification')
