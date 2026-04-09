@@ -217,6 +217,8 @@ export default function Billing() {
   const currentPlanData = PLANS.find((p) => p.id === user?.plan)
   const creditsUsed = (user?.totalCredits ?? 0) - (user?.credits ?? 0)
   const creditsPercent = user?.totalCredits ? Math.round((user.credits / user.totalCredits) * 100) : 0
+  const paidCredits = user?.paidCredits ?? 0
+  const totalAvailable = (user?.credits ?? 0) + paidCredits
   const isPaidPlan = user?.plan !== 'free'
 
   const resetDate = user?.creditsResetAt
@@ -261,19 +263,34 @@ export default function Billing() {
               </div>
 
               {/* Credits bar */}
-              <div>
-                <div className="mb-1.5 flex justify-between text-sm">
-                  <span className="text-gray-600 dark:text-gray-400">Credits remaining</span>
-                  <span className="font-semibold text-gray-900 dark:text-white">
-                    {user?.credits ?? 0} / {user?.totalCredits ?? 0}
-                  </span>
+              <div className="space-y-4">
+                {/* Monthly Credits */}
+                <div>
+                  <div className="mb-1.5 flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">Monthly Credits</span>
+                    <span className="font-semibold text-gray-900 dark:text-white">
+                      {user?.credits ?? 0} / {user?.totalCredits ?? 0}
+                    </span>
+                  </div>
+                  <ProgressBar
+                    value={creditsUsed}
+                    max={user?.totalCredits ?? 1}
+                    showPercent={false}
+                    color={user?.credits < 10 ? 'red' : user?.credits < 30 ? 'yellow' : 'indigo'}
+                  />
                 </div>
-                <ProgressBar
-                  value={creditsUsed}
-                  max={user?.totalCredits ?? 1}
-                  showPercent={false}
-                  color={user?.credits < 10 ? 'red' : user?.credits < 30 ? 'yellow' : 'indigo'}
-                />
+
+                {/* Paid Credits (Never expire) */}
+                {paidCredits > 0 && (
+                  <div>
+                    <div className="mb-1.5 flex justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">Paid Credits (Never expire)</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                        {paidCredits}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
                {/* Reset date / Expiry date */}
@@ -342,35 +359,35 @@ export default function Billing() {
 
         {/* Credit Balance Meter */}
         <Card>
-          <CardHeader title="Credit Balance" />
+          <CardHeader title="Total Balance" />
           <div className="flex flex-col items-center justify-center text-center">
             <div className="relative mb-3">
               <div className={`flex h-24 w-24 items-center justify-center rounded-full border-4 ${
-                user?.credits < 10
+                totalAvailable < 10
                   ? 'border-red-200 dark:border-red-800'
-                  : user?.credits < 30
+                  : totalAvailable < 30
                     ? 'border-yellow-200 dark:border-yellow-800'
                     : 'border-indigo-200 dark:border-indigo-800'
               }`}>
                 <div>
                   <p className={`text-2xl font-bold ${
-                    user?.credits < 10 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
+                    totalAvailable < 10 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'
                   }`}>
-                    {user?.credits ?? 0}
+                    {totalAvailable}
                   </p>
-                  <p className="text-[10px] uppercase tracking-wider text-gray-400">credits</p>
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400">total</p>
                 </div>
               </div>
-              {user?.credits < 10 && (
+              {totalAvailable < 10 && (
                 <div className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 shadow">
                   <AlertTriangle className="h-3.5 w-3.5 text-white" />
                 </div>
               )}
             </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {user?.credits < 10
+              {totalAvailable < 10
                 ? 'Low credits! Purchase more below.'
-                : `${creditsPercent}% of plan allocation remaining`
+                : `${user?.credits} monthly + ${paidCredits} paid`
               }
             </p>
             <div className="mt-3 w-full rounded-lg bg-indigo-50 px-3 py-2 dark:bg-indigo-900/20">
